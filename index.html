@@ -1490,6 +1490,18 @@ const FIREBASE_CONFIG_KEY = 'fts_firebase_config';
 let app = null;
 let db = null;
 
+// Versão visível para diagnóstico — confira em "Ver código-fonte" se está rodando esta versão
+window.FTS_BUILD = 'firebase-setup-v4-timeout-guard';
+
+// Evita telas travadas para sempre quando o sinal está fraco: se a operação do Firestore
+// não responder dentro do prazo, rejeita com um erro claro em vez de ficar pendurada.
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo esgotado (' + (ms/1000) + 's) em: ' + label + '. Verifique sua conexão.')), ms))
+  ]);
+}
+
 function getSavedFirebaseConfig() {
   try {
     const raw = localStorage.getItem(FIREBASE_CONFIG_KEY);
@@ -1662,23 +1674,26 @@ window.loadFromFirestore = async function(force) {
       updateDiagStatus('Firebase não pronto — dados locais');
       return;
     }
-    const snap = await getDocs(collection(window.firebaseDB, 'fts_records'));
+    const snap = await withTimeout(
+      getDocs(collection(window.firebaseDB, 'fts_records')),
+      15000,
+      'carregar registros do Firestore'
+    );
 
     if (snap.empty) {
       const localTotal = Object.values(RECORDS).flat().length;
-      if (localTotal === 0) {
-        // Nada para semear e Firestore realmente vazio — sistema limpo, não é erro.
+      // Firestore vazio NUNCA é semeado automaticamente — mesmo que existam dados
+      // embutidos no HTML (ex: arquivo desatualizado em cache). Semear é sempre uma
+      // ação manual e explícita, feita pelo botão "🌱 Re-seed Firestore" no Diagnóstico.
+      if (localTotal > 0) {
+        diagLog('📭 Firestore vazio. Há ' + localTotal + ' registro(s) no arquivo local, mas NÃO serão enviados automaticamente — use "Re-seed Firestore" no Diagnóstico se isso for intencional.');
+        updateDiagStatus('Vazio — dados locais disponíveis, aguardando ação manual');
+      } else {
         diagLog('📭 Firestore vazio e sem dados locais. Sistema pronto para novos lançamentos.');
         updateDiagStatus('Vazio — pronto para novos lançamentos');
-        window.hideSyncOverlay();
-        updateConnectionUI(window.isOnline);
-        return;
       }
-      // Firestore truly empty and there IS local data — first run, seed from HTML data
-      diagLog('📭 Firestore vazio — enviando seed com ' + localTotal + ' registros...');
-      updateDiagStatus('Firestore vazio — fazendo seed...');
-      window.showSyncOverlay && window.showSyncOverlay('Primeira sincronização — enviando dados...');
-      await window.seedFirestore();
+      window.hideSyncOverlay();
+      updateConnectionUI(window.isOnline);
       return;
     }
 
@@ -1750,7 +1765,11 @@ window.seedFirestore = async function() {
 
     // Step 1: Delete existing records in batches
     diagLog('🗑️ Limpando registros antigos do Firestore...');
-    const existingSnap = await getDocs(collection(db, 'fts_records'));
+    const existingSnap = await withTimeout(
+      getDocs(collection(db, 'fts_records')),
+      15000,
+      'verificar registros existentes'
+    );
     if (!existingSnap.empty) {
       let delBatch = writeBatch(db);
       let delCount = 0;
