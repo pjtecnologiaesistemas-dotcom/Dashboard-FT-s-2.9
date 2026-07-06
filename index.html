@@ -1665,8 +1665,16 @@ window.loadFromFirestore = async function(force) {
     const snap = await getDocs(collection(window.firebaseDB, 'fts_records'));
 
     if (snap.empty) {
-      // Firestore truly empty — first run, seed from HTML data
       const localTotal = Object.values(RECORDS).flat().length;
+      if (localTotal === 0) {
+        // Nada para semear e Firestore realmente vazio — sistema limpo, não é erro.
+        diagLog('📭 Firestore vazio e sem dados locais. Sistema pronto para novos lançamentos.');
+        updateDiagStatus('Vazio — pronto para novos lançamentos');
+        window.hideSyncOverlay();
+        updateConnectionUI(window.isOnline);
+        return;
+      }
+      // Firestore truly empty and there IS local data — first run, seed from HTML data
       diagLog('📭 Firestore vazio — enviando seed com ' + localTotal + ' registros...');
       updateDiagStatus('Firestore vazio — fazendo seed...');
       window.showSyncOverlay && window.showSyncOverlay('Primeira sincronização — enviando dados...');
@@ -1763,6 +1771,13 @@ window.seedFirestore = async function() {
     Object.entries(RECORDS).forEach(([cat, rows]) => {
       rows.forEach(row => allRows.push({ cat, row }));
     });
+
+    if (allRows.length === 0) {
+      diagLog('✅ Nada para semear — sistema limpo.');
+      updateDiagStatus('Vazio — pronto para novos lançamentos');
+      window.hideSyncOverlay && window.hideSyncOverlay();
+      return;
+    }
 
     let sent = 0;
     const BATCH_SIZE = 400;
