@@ -1689,9 +1689,15 @@ window.loadFromFirestore = async function(force) {
         diagLog('📭 Firestore vazio. Há ' + localTotal + ' registro(s) no arquivo local, mas NÃO serão enviados automaticamente — use "Re-seed Firestore" no Diagnóstico se isso for intencional.');
         updateDiagStatus('Vazio — dados locais disponíveis, aguardando ação manual');
       } else {
+        // Garante que RECORDS fique realmente vazio em todas as categorias
+        const cats = ['FTS FIXAS','FTS FERIAS','FTS APOIO EXTRA','FTS ATESTADOS e FALTAS','FTS VAGAS EM ABERTO','REMANEJAMENTOS','FTS TREINAMENTO'];
+        cats.forEach(c => RECORDS[c] = []);
         diagLog('📭 Firestore vazio e sem dados locais. Sistema pronto para novos lançamentos.');
         updateDiagStatus('Vazio — pronto para novos lançamentos');
       }
+      // Atualiza os cards e gráficos na tela para refletir o estado real (zerado),
+      // em vez de deixar os valores estáticos escritos no HTML.
+      window.syncAll();
       window.hideSyncOverlay();
       updateConnectionUI(window.isOnline);
       return;
